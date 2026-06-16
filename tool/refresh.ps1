@@ -28,6 +28,29 @@ Write-Host '== 3/3  Fetch live trade endpoints + build dictionary and userscript
 $wslTool = (wsl wslpath -a "$tool").Trim()
 wsl python3 "$wslTool/build_dict.py"
 
+# Publish the rebuilt userscript to GitHub so every browser (incl. Linux) can
+# auto-update from the raw URL. Requires an 'origin' remote + cached credentials
+# (one-time setup in README). Skips cleanly if not configured.
+Write-Host '== Publish  Push userscript to GitHub (for auto-update) ==' -ForegroundColor Cyan
+$proj = Split-Path $tool -Parent
+Push-Location $proj
+try {
+  $remotes = @(git remote 2>$null)
+  if ($remotes -notcontains 'origin') {
+    Write-Host '  No "origin" remote - skipping push (see README to set it up once).' -ForegroundColor Yellow
+  } else {
+    git add tool/dist/poe2cn-trade.user.js
+    if (@(git status --porcelain tool/dist/poe2cn-trade.user.js).Count -gt 0) {
+      $ver = (Select-String -Path (Join-Path $tool 'dist\poe2cn-trade.user.js') -Pattern '@version\s+(\S+)' | Select-Object -First 1).Matches.Groups[1].Value
+      git commit -q -m "Rebuild userscript $ver"
+      git push -q origin main
+      Write-Host "  Pushed userscript $ver." -ForegroundColor Green
+    } else {
+      Write-Host '  Userscript unchanged - nothing to push.' -ForegroundColor Gray
+    }
+  }
+} finally { Pop-Location }
+
 $report = Join-Path $tool 'dist\report.md'
 $script = Join-Path $tool 'dist\poe2cn-trade.user.js'
 Write-Host ''

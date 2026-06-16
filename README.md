@@ -51,8 +51,33 @@ A floating **中EN** button (bottom-right of the trade page) opens a settings pa
 - **Clear trade-data cache & reload** — forces the site to refetch + re-translate.
 - Status: dictionary version, build date, and entry counts.
 
-Settings persist per browser. After a rebuild, the script auto-updates if you've
-enabled "Allow access to file URLs" for Tampermonkey; otherwise reinstall the file.
+Settings persist per browser.
+
+## Use it on other machines (Linux, etc.) via GitHub auto-update
+
+The userscript is OS-independent — only the **datamine** needs the Windows/WeGame
+client. So one machine builds; any machine runs and auto-updates from GitHub raw.
+
+**One-time setup on the Windows build machine:**
+1. Create a **public** repo at `https://github.com/addohm/poe2cn-trade-helper`
+   (empty — no README/license, so the first push isn't rejected).
+2. From the project folder:
+   ```
+   git remote add origin https://github.com/addohm/poe2cn-trade-helper.git
+   git push -u origin main
+   ```
+   (Git Credential Manager will prompt you to sign in on the first push.)
+
+**On the Linux machine (or any browser):**
+1. Install Tampermonkey.
+2. Open the raw URL — Tampermonkey offers to install:
+   `https://raw.githubusercontent.com/addohm/poe2cn-trade-helper/main/tool/dist/poe2cn-trade.user.js`
+3. It **auto-updates** whenever the build machine pushes a new version (Tampermonkey
+   checks periodically; or use its "Check for userscript updates").
+
+**Ongoing:** after a game patch, run `tool/refresh.ps1` on the Windows box — it
+rebuilds **and pushes** automatically; every other machine auto-updates. No manual
+copying.
 
 ## Data sources (factual only)
 
