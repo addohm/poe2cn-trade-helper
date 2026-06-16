@@ -49,6 +49,16 @@
   };
   const DEBUG = SETTINGS.debug;
 
+  // Hold-to-peek: as we translate (API + DOM), record shown-English -> original
+  // Chinese here so a held hotkey can swap the page back to Chinese.
+  const REVERSE = new Map();
+  let PEEKING = false;
+  let domObserver = null;
+  const OBS_OPTS = {
+    childList: true, subtree: true, characterData: true,
+    attributes: true, attributeFilter: ['placeholder', 'value'],
+  };
+
   function bustCache() {
     // The site caches data/* in localStorage (the `lscache` lib: keys
     // `lscache-trade2{stats,filters,items,data}` + `-cacheexpiration`) and reads
@@ -161,8 +171,12 @@
     for (const r of json.result) {
       const it = r && r.item;
       if (!it) continue;
-      if (it.baseType && DICT.items[it.baseType]) { it.baseType = DICT.items[it.baseType]; n++; }
-      if (it.typeLine && DICT.items[it.typeLine]) { it.typeLine = DICT.items[it.typeLine]; n++; }
+      if (it.baseType && DICT.items[it.baseType]) {
+        REVERSE.set(DICT.items[it.baseType], it.baseType); it.baseType = DICT.items[it.baseType]; n++;
+      }
+      if (it.typeLine && DICT.items[it.typeLine]) {
+        REVERSE.set(DICT.items[it.typeLine], it.typeLine); it.typeLine = DICT.items[it.typeLine]; n++;
+      }
       const hashes = (it.extended && it.extended.hashes) || {};
       for (const sec of MOD_SECTIONS) {
         const mods = it[sec + 'Mods'];
@@ -170,8 +184,9 @@
         const h = hashes[sec];
         for (let i = 0; i < mods.length; i++) {
           const id = (Array.isArray(h) && h[i]) ? h[i][0] : null;
-          const t = translateMod(mods[i], id);
-          if (t !== mods[i]) { mods[i] = t; n++; }
+          const orig = mods[i];
+          const t = translateMod(orig, id);
+          if (t !== orig) { REVERSE.set(t, orig); mods[i] = t; n++; }
         }
       }
     }
@@ -190,40 +205,40 @@
     try {
       if (pathname.endsWith('/data/stats')) {
         for (const g of json.result) {
-          const gl = DICT.statGroups[g.id]; if (gl) g.label = gl;
+          const gl = DICT.statGroups[g.id]; if (gl) { REVERSE.set(gl, g.label); g.label = gl; }
           for (const e of g.entries || []) {
-            const t = DICT.stats[e.id]; if (t) { e.text = t; n++; }
+            const t = DICT.stats[e.id]; if (t) { REVERSE.set(t, e.text); e.text = t; n++; }
           }
         }
       } else if (pathname.endsWith('/data/static')) {
         for (const g of json.result) {
           for (const e of g.entries || []) {
-            const t = DICT.static[e.id]; if (t) { e.text = t; n++; }
+            const t = DICT.static[e.id]; if (t) { REVERSE.set(t, e.text); e.text = t; n++; }
           }
         }
       } else if (pathname.endsWith('/data/items')) {
         for (const g of json.result) {
-          const gl = DICT.itemCategories[g.id]; if (gl) g.label = gl;
+          const gl = DICT.itemCategories[g.id]; if (gl) { REVERSE.set(gl, g.label); g.label = gl; }
           for (const e of g.entries || []) {
             const t = e.type && DICT.items[e.type];
-            if (t) { e.type = t; if (e.text) e.text = t; n++; }
+            if (t) { REVERSE.set(t, e.type); e.type = t; if (e.text) e.text = t; n++; }
           }
         }
       } else if (pathname.endsWith('/data/leagues')) {
         for (const e of json.result) {
-          const t = DICT.leagues[e.text]; if (t) { e.text = t; n++; }
+          const t = DICT.leagues[e.text]; if (t) { REVERSE.set(t, e.text); e.text = t; n++; }
           // NB: leave e.id alone — the site sends it back to the search API.
         }
       } else if (pathname.endsWith('/data/filters')) {
         for (const g of json.result) {
-          const gt = DICT.filterGroups[g.id]; if (gt) { g.title = gt; n++; }
+          const gt = DICT.filterGroups[g.id]; if (gt) { REVERSE.set(gt, g.title); g.title = gt; n++; }
           for (const f of g.filters || []) {
-            const ft = DICT.filters[f.id]; if (ft) { f.text = ft; n++; }
+            const ft = DICT.filters[f.id]; if (ft) { REVERSE.set(ft, f.text); f.text = ft; n++; }
             const opts = f.option && f.option.options;
             if (opts) for (const o of opts) {
               let t = (o.id != null) ? DICT.filterOptions[f.id + '::' + o.id] : null;
               if (!t && o.text) t = DICT.filterOptionsByZh[o.text];
-              if (t) { o.text = t; n++; }
+              if (t) { REVERSE.set(t, o.text); o.text = t; n++; }
             }
           }
         }
@@ -393,11 +408,12 @@
   const CJK = /[一-鿿]/;
 
   function tText(node) {
+    if (PEEKING) return;                      // don't re-translate while peeking
     const v = node.nodeValue;
     if (!v) return;
     const k = v.trim();
     if (!k || !CJK.test(k)) return;          // skip empty / already-English nodes
-    const set = (en) => { node.nodeValue = v.replace(k, en); };
+    const set = (en) => { REVERSE.set(en, k); node.nodeValue = v.replace(k, en); };
 
     // 1) fixed chrome (colon-aware: "需求：" -> "Requires：")
     if (CHROME[k]) return set(CHROME[k]);
@@ -456,7 +472,8 @@
 
   function startDom() {
     domPass(document.body || document.documentElement);
-    const obs = new MutationObserver((muts) => {
+    domObserver = new MutationObserver((muts) => {
+      if (PEEKING) return;
       for (const m of muts) {
         if (m.type === 'attributes' && m.target.nodeType === 1) {
           if (m.attributeName === 'value') tValue(m.target);
@@ -470,10 +487,7 @@
         }
       }
     });
-    obs.observe(document.documentElement, {
-      childList: true, subtree: true, characterData: true,
-      attributes: true, attributeFilter: ['placeholder', 'value'],
-    });
+    domObserver.observe(document.documentElement, OBS_OPTS);
   }
   if (SETTINGS.enabled && SETTINGS.dom) {
     if (document.readyState === 'loading') {
@@ -523,6 +537,7 @@
       `<div class="ver"><small>dict ${META.version || '?'}<br>built ${META.builtAt || '?'}<br>` +
       `${c.stats || 0} stats &middot; ${c.items || 0} items &middot; ${c.statLines || 0} stat lines &middot; ` +
       `${c.skillDesc || 0} skills</small></div>` +
+      '<div class="ver"><small>Hold <b>`</b> (backtick) to peek the original Chinese.</small></div>' +
       '<div class="ver"><small>Update after a game patch: run <b>refresh.ps1</b>, ' +
       'then reload this script in Tampermonkey.</small></div>';
     document.body.appendChild(btn); document.body.appendChild(panel);
@@ -547,6 +562,45 @@
     document.addEventListener('DOMContentLoaded', buildPanel);
   } else {
     buildPanel();
+  }
+
+  // ---- hold-to-peek: show the original Chinese while a key is held ----
+  // Walks the DOM and swaps every shown-English string we have a recorded
+  // original for back to Chinese; restores on release. Default key: Backquote
+  // (the ` / ~ key). Override via localStorage poe2cn:peekKey (a KeyboardEvent.code).
+  if (SETTINGS.enabled) {
+    let PEEK_CODE = 'Backquote';
+    try { PEEK_CODE = localStorage.getItem(SKEY('peekKey')) || 'Backquote'; } catch (_) {}
+    let peeked = [];
+    const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+
+    function peekOn() {
+      if (PEEKING || !REVERSE.size) return;
+      PEEKING = true;
+      if (domObserver) domObserver.disconnect();
+      try {
+        const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = w.nextNode())) {
+          const val = node.nodeValue; if (!val) continue;
+          const k = val.trim(); if (!k) continue;
+          const zh = REVERSE.get(k);
+          if (zh && zh !== k) { peeked.push({ node, saved: val }); node.nodeValue = val.replace(k, zh); }
+        }
+      } catch (_) {}
+    }
+    function peekOff() {
+      if (!PEEKING) return;
+      for (const p of peeked) { try { p.node.nodeValue = p.saved; } catch (_) {} }
+      peeked = [];
+      PEEKING = false;
+      if (domObserver) domObserver.observe(document.documentElement, OBS_OPTS);
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.code === PEEK_CODE && !e.repeat && !typing(e.target)) { e.preventDefault(); peekOn(); }
+    }, true);
+    window.addEventListener('keyup', (e) => { if (e.code === PEEK_CODE) peekOff(); }, true);
+    window.addEventListener('blur', peekOff);   // window lost focus -> restore
   }
 
   console.log('[poe2cn]', SETTINGS.enabled ? 'active' : 'DISABLED', '- dict', META.version,
