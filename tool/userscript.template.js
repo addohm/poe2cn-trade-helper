@@ -533,11 +533,12 @@
       toggle('enabled', 'Enable translation') +
       toggle('dom', 'Translate page text (tooltips/labels)') +
       toggle('debug', 'Debug logging (console)') +
+      '<button id="poe2cn-peek">Show original Chinese</button>' +
       '<button id="poe2cn-clear">Clear trade-data cache &amp; reload</button>' +
       `<div class="ver"><small>dict ${META.version || '?'}<br>built ${META.builtAt || '?'}<br>` +
       `${c.stats || 0} stats &middot; ${c.items || 0} items &middot; ${c.statLines || 0} stat lines &middot; ` +
       `${c.skillDesc || 0} skills</small></div>` +
-      '<div class="ver"><small>Hold <b>`</b> (backtick) to peek the original Chinese.</small></div>' +
+      '<div class="ver"><small>Toggle the button above, or hold <b>`</b> (backtick), to show the original Chinese.</small></div>' +
       '<div class="ver"><small>Update after a game patch: run <b>refresh.ps1</b>, ' +
       'then reload this script in Tampermonkey.</small></div>';
     document.body.appendChild(btn); document.body.appendChild(panel);
@@ -557,6 +558,9 @@
     panel.querySelector('#poe2cn-clear').addEventListener('click', () => {
       bustCache(); location.reload();
     });
+    const peekBtn = panel.querySelector('#poe2cn-peek');
+    if (peekBtn) peekBtn.addEventListener('click', togglePeek);
+    updatePeekBtn();
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', buildPanel);
@@ -564,43 +568,56 @@
     buildPanel();
   }
 
-  // ---- hold-to-peek: show the original Chinese while a key is held ----
-  // Walks the DOM and swaps every shown-English string we have a recorded
-  // original for back to Chinese; restores on release. Default key: Backquote
-  // (the ` / ~ key). Override via localStorage poe2cn:peekKey (a KeyboardEvent.code).
+  // ---- peek: show the original Chinese, via held hotkey OR panel toggle ----
+  // Walks the DOM and swaps every shown-English string we recorded an original
+  // for back to Chinese; restores on exit. Pauses the observer while peeking.
+  let peeked = [];
+  function peekOn() {
+    if (PEEKING || !REVERSE.size) return;
+    PEEKING = true;
+    if (domObserver) domObserver.disconnect();
+    try {
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = w.nextNode())) {
+        const val = node.nodeValue; if (!val) continue;
+        const k = val.trim(); if (!k) continue;
+        const zh = REVERSE.get(k);
+        if (zh && zh !== k) { peeked.push({ node, saved: val }); node.nodeValue = val.replace(k, zh); }
+      }
+    } catch (_) {}
+    updatePeekBtn();
+  }
+  function peekOff() {
+    if (!PEEKING) return;
+    for (const p of peeked) { try { p.node.nodeValue = p.saved; } catch (_) {} }
+    peeked = [];
+    PEEKING = false;
+    if (domObserver) domObserver.observe(document.documentElement, OBS_OPTS);
+    updatePeekBtn();
+  }
+  function togglePeek() { if (PEEKING) peekOff(); else peekOn(); }
+  function updatePeekBtn() {
+    const b = document.getElementById('poe2cn-peek');
+    if (b) b.textContent = PEEKING ? 'Show English (restore)' : 'Show original Chinese';
+  }
+
+  // hold-to-peek hotkey (default Backquote; override via localStorage poe2cn:peekKey).
+  // Only the *held* key auto-restores on release; a button toggle stays until clicked.
   if (SETTINGS.enabled) {
     let PEEK_CODE = 'Backquote';
     try { PEEK_CODE = localStorage.getItem(SKEY('peekKey')) || 'Backquote'; } catch (_) {}
-    let peeked = [];
     const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-
-    function peekOn() {
-      if (PEEKING || !REVERSE.size) return;
-      PEEKING = true;
-      if (domObserver) domObserver.disconnect();
-      try {
-        const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-        let node;
-        while ((node = w.nextNode())) {
-          const val = node.nodeValue; if (!val) continue;
-          const k = val.trim(); if (!k) continue;
-          const zh = REVERSE.get(k);
-          if (zh && zh !== k) { peeked.push({ node, saved: val }); node.nodeValue = val.replace(k, zh); }
-        }
-      } catch (_) {}
-    }
-    function peekOff() {
-      if (!PEEKING) return;
-      for (const p of peeked) { try { p.node.nodeValue = p.saved; } catch (_) {} }
-      peeked = [];
-      PEEKING = false;
-      if (domObserver) domObserver.observe(document.documentElement, OBS_OPTS);
-    }
+    let heldPeek = false;
     window.addEventListener('keydown', (e) => {
-      if (e.code === PEEK_CODE && !e.repeat && !typing(e.target)) { e.preventDefault(); peekOn(); }
+      if (e.code === PEEK_CODE && !e.repeat && !typing(e.target) && !PEEKING) {
+        e.preventDefault(); heldPeek = true; peekOn();
+      }
     }, true);
-    window.addEventListener('keyup', (e) => { if (e.code === PEEK_CODE) peekOff(); }, true);
-    window.addEventListener('blur', peekOff);   // window lost focus -> restore
+    window.addEventListener('keyup', (e) => {
+      if (e.code === PEEK_CODE && heldPeek) { heldPeek = false; peekOff(); }
+    }, true);
+    window.addEventListener('blur', () => { if (heldPeek) { heldPeek = false; peekOff(); } });
   }
 
   console.log('[poe2cn]', SETTINGS.enabled ? 'active' : 'DISABLED', '- dict', META.version,
