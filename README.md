@@ -61,7 +61,15 @@ client. So one machine builds; any machine runs and auto-updates from GitHub raw
 **One-time setup on the Windows build machine:**
 1. Create a **public** repo at `https://github.com/addohm/poe2cn-trade-helper`
    (empty — no README/license, so the first push isn't rejected).
-2. From the project folder:
+2. Use your GitHub **noreply** email so the push isn't blocked by email privacy
+   (GitHub error `GH007`). This repo is already configured with it; for a fresh
+   clone set it once:
+   ```
+   git config user.email "addohm@users.noreply.github.com"
+   ```
+   (If you'd already committed with a private email, rewrite history before pushing:
+   `git rebase --root --exec "git commit --amend --no-edit --reset-author"`.)
+3. From the project folder:
    ```
    git remote add origin https://github.com/addohm/poe2cn-trade-helper.git
    git push -u origin main
