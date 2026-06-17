@@ -171,11 +171,22 @@
     for (const r of json.result) {
       const it = r && r.item;
       if (!it) continue;
-      if (it.baseType && DICT.items[it.baseType]) {
-        REVERSE.set(DICT.items[it.baseType], it.baseType); it.baseType = DICT.items[it.baseType]; n++;
-      }
-      if (it.typeLine && DICT.items[it.typeLine]) {
-        REVERSE.set(DICT.items[it.typeLine], it.typeLine); it.typeLine = DICT.items[it.typeLine]; n++;
+      // Capture the original (Chinese) base before we translate it, so we can
+      // also swap it inside the displayed name. Magic items show typeLine =
+      // "<prefix> <base> <suffix>" (one line), which never exact-matches; rare
+      // items show a separate baseType line that does.
+      const zhBase = (it.baseType && DICT.items[it.baseType]) ? it.baseType : null;
+      const enBase = zhBase ? DICT.items[zhBase] : null;
+      if (zhBase) { REVERSE.set(enBase, zhBase); it.baseType = enBase; n++; }
+      for (const f of ['typeLine', 'name']) {
+        const orig = it[f];
+        if (!orig) continue;
+        if (DICT.items[orig]) {                       // whole field is a base
+          REVERSE.set(DICT.items[orig], orig); it[f] = DICT.items[orig]; n++;
+        } else if (zhBase && orig.indexOf(zhBase) >= 0) {  // base embedded in a magic name
+          const t = orig.split(zhBase).join(enBase);
+          REVERSE.set(t, orig); it[f] = t; n++;
+        }
       }
       const hashes = (it.extended && it.extended.hashes) || {};
       for (const sec of MOD_SECTIONS) {
