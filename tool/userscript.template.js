@@ -49,6 +49,11 @@
   };
   const DEBUG = SETTINGS.debug;
 
+  // Untranslated item bases seen at runtime (coverage self-check): zh -> count.
+  const CJK_RE = /[一-鿿]/;
+  const ITEM_MISS = new Map();
+  const noteMiss = (zh) => { if (zh && CJK_RE.test(zh)) ITEM_MISS.set(zh, (ITEM_MISS.get(zh) || 0) + 1); };
+
   // Hold-to-peek: as we translate (API + DOM), record shown-English -> original
   // Chinese here so a held hotkey can swap the page back to Chinese.
   const REVERSE = new Map();
@@ -188,6 +193,7 @@
           REVERSE.set(t, orig); it[f] = t; n++;
         }
       }
+      if (it.baseType && CJK_RE.test(it.baseType)) noteMiss(it.baseType);  // base not in dict
       const hashes = (it.extended && it.extended.hashes) || {};
       for (const sec of MOD_SECTIONS) {
         const mods = it[sec + 'Mods'];
@@ -233,6 +239,7 @@
           for (const e of g.entries || []) {
             const t = e.type && DICT.items[e.type];
             if (t) { REVERSE.set(t, e.type); e.type = t; if (e.text) e.text = t; n++; }
+            else noteMiss(e.type);          // searchable item type not in dict
           }
         }
       } else if (pathname.endsWith('/data/leagues')) {
@@ -545,6 +552,7 @@
       toggle('dom', 'Translate page text (tooltips/labels)') +
       toggle('debug', 'Debug logging (console)') +
       '<button id="poe2cn-peek">Show original Chinese</button>' +
+      '<button id="poe2cn-miss">Check item coverage</button>' +
       '<button id="poe2cn-clear">Clear trade-data cache &amp; reload</button>' +
       `<div class="ver"><small>dict ${META.version || '?'}<br>built ${META.builtAt || '?'}<br>` +
       `${c.stats || 0} stats &middot; ${c.items || 0} items &middot; ${c.statLines || 0} stat lines &middot; ` +
@@ -572,6 +580,15 @@
     const peekBtn = panel.querySelector('#poe2cn-peek');
     if (peekBtn) peekBtn.addEventListener('click', togglePeek);
     updatePeekBtn();
+    const missBtn = panel.querySelector('#poe2cn-miss');
+    if (missBtn) missBtn.addEventListener('click', (e) => {
+      const list = [...ITEM_MISS.keys()].sort();
+      console.log('[poe2cn] untranslated item bases seen this session (' + list.length + '):', list);
+      if (list.length) { try { navigator.clipboard.writeText(list.join('\n')); } catch (_) {} }
+      e.target.textContent = list.length
+        ? `Untranslated items: ${list.length} (copied, see console)`
+        : 'Item coverage: all translated ✓';
+    });
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', buildPanel);
