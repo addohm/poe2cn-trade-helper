@@ -350,6 +350,35 @@ the panel. The `@grant none` translation engine is unchanged from the live-valid
 
 ---
 
+## 4m. BUILT (2026-06-26): unique item names + self-contained datamine
+
+**Self-contained toolchain (decoupled from filterblade2cn).** The sibling filter project was
+reorganized into `poe2cn-filter-helper`, removing the shared `tool/engine/core.mjs` + portable node
+our datamine borrowed. So the datamine now lives entirely in this repo:
+- `tool/engine.mjs` — `openInstall`/`extractTable(…, langDir, columns)`/`listPaths`/`findGuofuInstall`/
+  `getSchema`/`sanityCheckBaseItems`, using `pathofexile-dat` (WASM Oodle) from `tool/node_modules`.
+  POSIX paths; runs on **WSL node**. `findGuofuInstall` scans `/mnt/<drive>/WeGameApps/rail_apps/…`.
+- `npm install` in `tool/` provides the deps (gitignored). `tool/data/schema.cache.json` is seeded
+  (also auto-downloaded by `getSchema`). `refresh.ps1` self-bootstraps `npm install` and runs the
+  extracts via `wsl bash -lc "cd … && node …"`.
+
+**Unique item names (the find-items gap).** The find-items list is CN `data/items`; we only
+translated base `type`, not unique `name`, so the ~445 uniques showed in Chinese and English typing
+missed them. Localized unique names live in **`Words.Text2`** (found by scanning every SC-overlay
+table for a known unique zh string — `Words.Text` is NOT localized, `Text2` is). `extract_items.mjs`
+extracts `Words.Text2` en + SC joined by **row index** → `data/unique_names.json` (3095 zh→en;
+**445/445** find-items uniques covered). `build_dict` ships a `uniques` map; the userscript translates
+`data/items` `name` for display AND adds it to `ITEM_REV` so the **outgoing search query** reverse-maps
+the English unique name back to Chinese (same mechanism as base types). Verified: `贪欲之记`→Andvarius,
+`贝雷克的冰与雷之曲`→Berek's Grip.
+
+**Critical items lesson (also §4f follow-up):** item base `type` AND unique `name` are the values the
+search API filters on (no language-independent id). Translating them for display REQUIRES rewriting the
+outgoing `/search` body (en→zh via `ITEM_REV`) or the 国服 backend rejects it ("Unknown Base Type").
+`rewriteSearchBody` does this surgically (top-level query string fields only).
+
+---
+
 ## 5. Auth & CORS (important)
 
 - The extension/userscript runs **same-origin** on `poe.game.qq.com`, so the user's session cookie is

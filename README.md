@@ -101,21 +101,30 @@ the WeGame install and errors clearly if it's missing.
 
 ## Rebuild the dictionary (after a game/content update, ~every 4 months)
 
-Two steps. Both are re-runnable and idempotent.
+### The easy way — one command
+
+From the project's `tool/` folder, run the refresher (it datamines the WeGame
+client, re-fetches the trade endpoints, rebuilds the userscript, and pushes to
+GitHub):
 
 ```powershell
-# 1. Client datamine — ONLY after a CN *client* update. Two scripts:
-#    a) item bases, classes + gem/skill names & descriptions (joins on metadata Id)
-C:\Users\addohm\Documents\filterblade2cn\tool\node\node.exe `
-    C:\Users\addohm\Documents\poe2cn-trade-helper\tool\extract_items.mjs
-#       add --refresh-schema if the dat schema changed this patch
-#    b) full stat-description templates (gem/skill stat lines + mods), en<->zh
-C:\Users\addohm\Documents\filterblade2cn\tool\node\node.exe `
-    C:\Users\addohm\Documents\poe2cn-trade-helper\tool\extract_statdesc.mjs
+powershell -ExecutionPolicy Bypass -File C:\Users\addohm\Documents\poe2cn-trade-helper\tool\refresh.ps1
+```
+
+(or right-click `tool\refresh.ps1` → **Run with PowerShell**). On first run it
+auto-installs the datamine deps (`npm install` in `tool/`). It's self-contained —
+no dependency on any other project.
+
+### The manual steps (what refresh.ps1 does)
+
+```bash
+# 1. Client datamine — ONLY after a CN *client* update (run under WSL). Self-
+#    contained: `npm install` once in tool/, then:
+cd /mnt/c/Users/addohm/Documents/poe2cn-trade-helper/tool
+node extract_items.mjs --refresh-schema   # bases, classes, gem/skill text, unique names
+node extract_statdesc.mjs                  # full en<->zh StatDescriptions templates
 
 # 2. Dictionary + userscript — after either the trade site OR the client updates.
-#    Fetches the trade data endpoints from both hosts and merges the item data,
-#    then writes dist/dict.json, dist/report.md, and dist/poe2cn-trade.user.js
 wsl python3 /mnt/c/Users/addohm/Documents/poe2cn-trade-helper/tool/build_dict.py
 #    --offline rebuilds from tool/raw/ cache without re-fetching
 ```
@@ -128,15 +137,17 @@ Then reinstall/refresh the userscript in Tampermonkey.
 
 ```
 tool/
-  refresh.ps1              # one-command: datamine + fetch + rebuild (run after a patch)
+  refresh.ps1              # one-command: datamine + fetch + rebuild + push (after a patch)
   build_dict.py            # fetch trade endpoints (both hosts) + merge all data -> dict + userscript
-  extract_items.mjs        # datamine item bases/classes + gem/skill names & descriptions
+  engine.mjs               # self-contained .dat reader (pathofexile-dat); WeGame auto-detect
+  extract_items.mjs        # datamine bases/classes + gem/skill text + unique names
   extract_statdesc.mjs     # datamine full en<->zh StatDescriptions templates (gem/skill stats, mods)
+  package.json             # datamine deps (pathofexile-dat); `npm install` in tool/
   userscript.template.js   # userscript logic (__DICT__ injected at build time)
   sim_translate.py         # offline coverage check (data/* vs cached CN responses)
   sim_mods.py              # offline check of result-mod (affix) translation
   sim_dom.py               # offline check of DOM/chrome/tooltip/league translation
-  data/                    # client-datamined inputs (item_bases, item_classes, skill_text, stat_lines)
+  data/                    # client-datamined inputs (item_bases, item_classes, skill_text, stat_lines, unique_names)
   raw/                     # cached raw API responses (for --offline / diffing)
   dist/
     dict.json              # full bidirectional en<->zh dictionary
@@ -151,8 +162,11 @@ tool/
   network stack can't reach `pathofexile.com` (a Windows-side proxy maps it to a
   fake-IP). It also sends browser headers + paces requests so Cloudflare's
   bot-fight doesn't 403 it.
-- `extract_items.mjs` reuses the sibling `filterblade2cn` engine + portable node;
-  it reads the CN install path from that project's `tool/data/config.json`.
+- The datamine is **self-contained**: `tool/engine.mjs` + `tool/node_modules`
+  (`pathofexile-dat`, installed by `npm install`), run on **WSL node**. It
+  **auto-detects** the WeGame install under `/mnt/<drive>/WeGameApps/rail_apps/...`
+  (override via `tool/data/config.json` `{"cnInstall": "..."}` or a CLI path arg).
+  Unique item names come from the client's `Words.Text2` (en + SC, joined by row).
 
 ## Scope / ToS
 
