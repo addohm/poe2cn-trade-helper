@@ -202,8 +202,22 @@
         for (let i = 0; i < mods.length; i++) {
           const id = (Array.isArray(h) && h[i]) ? h[i][0] : null;
           const orig = mods[i];
-          const t = translateMod(orig, id);
-          if (t !== orig) { REVERSE.set(t, orig); mods[i] = t; n++; }
+          // Mod entries are normally rendered strings. If a payload uses
+          // structured objects, translate the string field in place and leave
+          // the object otherwise intact (don't stringify it into the UI).
+          if (typeof orig === 'string') {
+            const t = translateMod(orig, id);
+            if (t !== orig) { REVERSE.set(t, orig); mods[i] = t; n++; }
+          } else if (orig && typeof orig === 'object') {
+            for (const key of ['text', 'name', 'string', 'value']) {
+              if (typeof orig[key] === 'string') {
+                const t = translateMod(orig[key], id);
+                if (t !== orig[key]) { REVERSE.set(t, orig[key]); orig[key] = t; n++; }
+                break;
+              }
+            }
+            if (DEBUG) console.warn('[poe2cn] structured mod in', sec, orig);
+          }
         }
       }
     }
@@ -611,7 +625,7 @@
         const val = node.nodeValue; if (!val) continue;
         const k = val.trim(); if (!k) continue;
         const zh = REVERSE.get(k);
-        if (zh && zh !== k) { peeked.push({ node, saved: val }); node.nodeValue = val.replace(k, zh); }
+        if (typeof zh === 'string' && zh !== k) { peeked.push({ node, saved: val }); node.nodeValue = val.replace(k, zh); }
       }
     } catch (_) {}
     updatePeekBtn();
