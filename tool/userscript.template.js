@@ -54,6 +54,12 @@
   const ITEM_MISS = new Map();
   const noteMiss = (zh) => { if (zh && CJK_RE.test(zh)) ITEM_MISS.set(zh, (ITEM_MISS.get(zh) || 0) + 1); };
 
+  // Item base names have no language-independent id: the localized `type` string
+  // IS the value the site sends to the search API. We translate it to English for
+  // display, so the OUTGOING search query must be mapped back (en -> zh) or the
+  // 国服 backend rejects it ("Unknown Base Type"). ITEM_REV holds that mapping.
+  const ITEM_REV = new Map();
+
   // Hold-to-peek: as we translate (API + DOM), record shown-English -> original
   // Chinese here so a held hotkey can swap the page back to Chinese.
   const REVERSE = new Map();
@@ -91,7 +97,30 @@
   }
 
   const FETCH_RE = /\/api\/trade2\/fetch\//;          // search-result listings
+  const SEARCH_RE = /\/api\/trade2\/search\//;        // POST: outgoing query
   const INTERCEPT_RE = /\/api\/trade2\/(data\/(stats|static|items|leagues|filters)|fetch\/)/;
+
+  // Map a search request body's English item-name fields back to Chinese so the
+  // 国服 backend recognises them. Only top-level query string fields (type/name/
+  // term) can hold a base name; stat/filter values use ids and are left alone.
+  function rewriteSearchBody(body) {
+    if (typeof body !== 'string' || !ITEM_REV.size) return body;
+    try {
+      const obj = JSON.parse(body);
+      const q = obj && obj.query;
+      let changed = false;
+      if (q && typeof q === 'object') {
+        for (const key of Object.keys(q)) {
+          const v = q[key];
+          if (typeof v === 'string' && ITEM_REV.has(v)) { q[key] = ITEM_REV.get(v); changed = true; }
+          else if (v && typeof v === 'object' && typeof v.option === 'string'
+                   && ITEM_REV.has(v.option)) { v.option = ITEM_REV.get(v.option); changed = true; }
+        }
+      }
+      if (DEBUG && changed) console.log('[poe2cn] reverse-mapped search query item name -> zh');
+      return JSON.stringify(obj);
+    } catch (_) { return body; }
+  }
 
   function pathnameOf(url) {
     try { return new URL(url, location.origin).pathname; }
@@ -252,8 +281,10 @@
           const gl = DICT.itemCategories[g.id]; if (gl) { REVERSE.set(gl, g.label); g.label = gl; }
           for (const e of g.entries || []) {
             const t = e.type && DICT.items[e.type];
-            if (t) { REVERSE.set(t, e.type); e.type = t; if (e.text) e.text = t; n++; }
-            else noteMiss(e.type);          // searchable item type not in dict
+            if (t) {
+              ITEM_REV.set(t, e.type);      // en -> zh, for the outgoing query
+              REVERSE.set(t, e.type); e.type = t; if (e.text) e.text = t; n++;
+            } else noteMiss(e.type);        // searchable item type not in dict
           }
         }
       } else if (pathname.endsWith('/data/leagues')) {
@@ -288,6 +319,11 @@
     window.fetch = async function (input, init) {
       const url = (typeof input === 'string') ? input
         : (input && input.url) ? input.url : '';
+      // Rewrite the outgoing search query (English item name -> Chinese).
+      if (SEARCH_RE.test(url) && init && typeof init.body === 'string') {
+        const nb = rewriteSearchBody(init.body);
+        if (nb !== init.body) { init = Object.assign({}, init, { body: nb }); arguments[1] = init; }
+      }
       const resp = await origFetch.apply(this, arguments);
       if (!INTERCEPT_RE.test(url)) return resp;
       if (DEBUG) console.log('[poe2cn] fetch intercepted', url);
@@ -317,10 +353,16 @@
   proto.open = function (method, url) {
     this.__poeUrl = url;
     this.__poeHit = INTERCEPT_RE.test(url || '');
+    this.__poeSearch = SEARCH_RE.test(url || '');
     return origOpen.apply(this, arguments);
   };
 
-  proto.send = function () {
+  proto.send = function (body) {
+    // Rewrite the outgoing search query (English item name -> Chinese).
+    if (this.__poeSearch && typeof body === 'string') {
+      const nb = rewriteSearchBody(body);
+      if (nb !== body) arguments[0] = nb;
+    }
     if (this.__poeHit) {
       const xhr = this;
       if (DEBUG) console.log('[poe2cn] xhr intercepted', this.__poeUrl);
