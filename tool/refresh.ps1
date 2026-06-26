@@ -11,21 +11,19 @@
 
 $ErrorActionPreference = 'Stop'
 $tool = $PSScriptRoot
-$node = 'C:\Users\addohm\Documents\filterblade2cn\tool\node\node.exe'
+$wslTool = (wsl wslpath -a "$tool").Trim()
 
-if (-not (Test-Path $node)) {
-  Write-Error "Portable node not found at $node - fix the path in refresh.ps1."
-  exit 1
-}
+# Self-contained datamine: WSL node + this folder's own pathofexile-dat.
+Write-Host '== 0/3  Ensure datamine deps (npm install if needed) ==' -ForegroundColor Cyan
+wsl bash -lc "cd '$wslTool' && [ -d node_modules ] || npm install"
 
-Write-Host '== 1/3  Datamine items / classes / gem-skill names + descriptions ==' -ForegroundColor Cyan
-& $node (Join-Path $tool 'extract_items.mjs') --refresh-schema
+Write-Host '== 1/3  Datamine items / classes / skills / unique names ==' -ForegroundColor Cyan
+wsl bash -lc "cd '$wslTool' && node extract_items.mjs --refresh-schema"
 
 Write-Host '== 2/3  Datamine StatDescriptions (gem/skill stat lines + mods) ==' -ForegroundColor Cyan
-& $node (Join-Path $tool 'extract_statdesc.mjs')
+wsl bash -lc "cd '$wslTool' && node extract_statdesc.mjs"
 
 Write-Host '== 3/3  Fetch live trade endpoints + build dictionary and userscript ==' -ForegroundColor Cyan
-$wslTool = (wsl wslpath -a "$tool").Trim()
 wsl python3 "$wslTool/build_dict.py"
 
 # Publish the rebuilt userscript to GitHub so every browser (incl. Linux) can

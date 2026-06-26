@@ -280,11 +280,16 @@
         for (const g of json.result) {
           const gl = DICT.itemCategories[g.id]; if (gl) { REVERSE.set(gl, g.label); g.label = gl; }
           for (const e of g.entries || []) {
-            const t = e.type && DICT.items[e.type];
-            if (t) {
-              ITEM_REV.set(t, e.type);      // en -> zh, for the outgoing query
-              REVERSE.set(t, e.type); e.type = t; if (e.text) e.text = t; n++;
-            } else noteMiss(e.type);        // searchable item type not in dict
+            const baseEn = e.type && DICT.items[e.type];
+            if (baseEn) {
+              ITEM_REV.set(baseEn, e.type);   // en -> zh, for the outgoing query
+              REVERSE.set(baseEn, e.type); e.type = baseEn; n++;
+            } else noteMiss(e.type);          // searchable item type not in dict
+            // uniques have a `name` (the unique name) + base `type`
+            if (e.name) {
+              const un = DICT.uniques[e.name];
+              if (un) { ITEM_REV.set(un, e.name); REVERSE.set(un, e.name); e.name = un; n++; }
+            } else if (e.text && baseEn) { REVERSE.set(baseEn, e.text); e.text = baseEn; }
           }
         }
       } else if (pathname.endsWith('/data/leagues')) {

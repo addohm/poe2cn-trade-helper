@@ -86,6 +86,7 @@ ITEM_BASES_PATH = DATA_DIR / "item_bases.json"      # [{id, en, zh}]
 ITEM_CLASSES_PATH = DATA_DIR / "item_classes.json"  # [{id, en, zh}]
 SKILL_TEXT_PATH = DATA_DIR / "skill_text.json"      # [{id, en_name, zh_name, en_desc, zh_desc}]
 STAT_LINES_PATH = DATA_DIR / "stat_lines.json"      # [[zhTemplate, enTemplate], ...]
+UNIQUE_NAMES_PATH = DATA_DIR / "unique_names.json"  # [[zh, en], ...] (Words.Text2)
 
 # PoE rich-text markup: "[Key|Display]" renders as "Display"; "[Display]" as "Display".
 _TAG_PIPE = re.compile(r"\[([^\]|]+)\|([^\]]+)\]")
@@ -603,6 +604,10 @@ def build_runtime_dict(dict_obj: dict) -> dict:
         # full stat-description templates (gem/skill stats + mods); the userscript
         # builds a normalized lookup Map from these at startup.
         "statLines": load_client_list(STAT_LINES_PATH) or [],
+        # localized unique item names (Words.Text2) zh -> en, for the find-items
+        # list + outgoing-query reverse-mapping.
+        "uniques": {zh: en for zh, en in (load_client_list(UNIQUE_NAMES_PATH) or [])
+                    if zh and en},
     }
 
 

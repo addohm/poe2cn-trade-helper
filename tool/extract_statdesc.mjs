@@ -17,10 +17,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { openInstall, listPaths, findGuofuInstall } from '../../filterblade2cn/tool/engine/core.mjs';
+import { openInstall, listPaths, findGuofuInstall } from './engine.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SIBLING_DATA = path.resolve(HERE, '../../filterblade2cn/tool/data');
 const OUT_DATA = path.join(HERE, 'data');
 
 async function resolveCnInstall() {
@@ -28,13 +27,13 @@ async function resolveCnInstall() {
   const cli = process.argv.slice(2).find(a => !a.startsWith('--'));
   if (cli) extra.push(cli);
   try {
-    const cfg = JSON.parse(await fs.readFile(path.join(SIBLING_DATA, 'config.json'), 'utf8'));
+    const cfg = JSON.parse(await fs.readFile(path.join(OUT_DATA, 'config.json'), 'utf8'));
     if (cfg.cnInstall) extra.push(cfg.cnInstall);
   } catch {}
   const found = await findGuofuInstall(extra);
   if (!found) {
     console.error('[statdesc] FATAL: 国服 (WeGame) PoE2 client not found. Pass the path ' +
-      'explicitly or set cnInstall in filterblade2cn\\tool\\data\\config.json.');
+      'explicitly or set cnInstall in tool/data/config.json.');
     process.exit(1);
   }
   return found;
@@ -100,7 +99,7 @@ async function main() {
   // Keep files relevant to trade (item mods + gem/skill tooltips); skip
   // monster/atlas/passive/sanctum/etc. that never appear on the trade site.
   const KEEP = /statdescriptions\/(stat_descriptions|advanced_mod_stat_descriptions|gem_stat_descriptions|active_skill_gem_stat_descriptions|meta_gem_stat_descriptions|skill_stat_descriptions|specific_skill_stat_descriptions\/)/i;
-  const paths = (await listPaths(cnInstall))
+  const paths = listPaths(getFile)
     .filter(p => /statdescriptions\/.*\.csd$/i.test(p) && KEEP.test(p));
   console.log(`[statdesc] ${paths.length} .csd files (trade-relevant subset)`);
 
