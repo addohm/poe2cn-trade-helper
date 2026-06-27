@@ -70,6 +70,13 @@
     attributes: true, attributeFilter: ['placeholder', 'value'],
   };
 
+  // Seed the reverse maps from the dictionary at startup so search-reverse-mapping
+  // (en item name -> zh) and peek work even when the site serves data/* from its
+  // own localStorage cache (in which case our fetch/XHR hook never re-runs).
+  for (const zh in DICT.items) { const en = DICT.items[zh]; if (en) { ITEM_REV.set(en, zh); REVERSE.set(en, zh); } }
+  for (const zh in DICT.uniques) { const en = DICT.uniques[zh]; if (en) { ITEM_REV.set(en, zh); REVERSE.set(en, zh); } }
+  for (const en in (DICT.revSeed || {})) REVERSE.set(en, DICT.revSeed[en]);
+
   function bustCache() {
     // The site caches data/* in localStorage (the `lscache` lib: keys
     // `lscache-trade2{stats,filters,items,data}` + `-cacheexpiration`) and reads
@@ -414,6 +421,8 @@
     '搜索物品': 'Search Items', '查找物品...': 'Find Items...', '查找物品…': 'Find Items…',
     '设定': 'Settings', '使用指南': 'Guide', '输入账号名': 'Enter account name',
     '最小值': 'Min', '最大值': 'Max', '清除': 'Clear', '搜索': 'Search',
+    '自定义搜索': 'Custom Search', '搜索列表物品': 'Search Listed Items',
+    '大宗交易': 'Bulk Item Exchange',
     // stat-filter section + action buttons
     '状态过滤': 'Stat Filters', '状态筛选': 'Stat Filters',
     '+ 增加状态过滤器': '+ Add Stat Filter', '增加状态过滤器': 'Add Stat Filter',

@@ -608,7 +608,33 @@ def build_runtime_dict(dict_obj: dict) -> dict:
         # list + outgoing-query reverse-mapping.
         "uniques": {zh: en for zh, en in (load_client_list(UNIQUE_NAMES_PATH) or [])
                     if zh and en},
+        # en -> zh for the display sections (filters/static/categories/leagues/
+        # stat groups) so the userscript can seed its reverse maps at startup and
+        # peek/search-reverse work even when the site serves data/* from its cache.
+        "revSeed": _rev_seed(dict_obj),
     }
+
+
+def _rev_seed(dict_obj: dict) -> dict:
+    rev: dict[str, str] = {}
+
+    def add(en, zh):
+        if en and zh and en != zh:
+            rev.setdefault(en, zh)
+
+    for v in dict_obj["static"]["entries"].values():
+        add(v.get("en"), v.get("zh"))
+    for v in dict_obj["stats"]["groups"].values():
+        add(v.get("en"), v.get("zh"))
+    f = dict_obj["filters"]
+    for sect in ("groups", "filters", "options"):
+        for v in f[sect].values():
+            add(v.get("en"), v.get("zh"))
+    for v in dict_obj["items"]["categories"].values():
+        add(v.get("en"), v.get("zh"))
+    for p in dict_obj["leagues"]:
+        add(p.get("en"), p.get("zh"))
+    return rev
 
 
 def _skill_runtime_maps() -> dict:
