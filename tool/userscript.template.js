@@ -261,14 +261,15 @@
             const t = translateMod(orig, id);
             if (t !== orig) { REVERSE.set(t, orig); mods[i] = t; n++; }
           } else if (orig && typeof orig === 'object') {
-            for (const key of ['text', 'name', 'string', 'value']) {
+            // structured mod, e.g. {description:'+87 生命上限', hash:'stat.explicit.stat_3299347043'}
+            const sid = orig.hash ? String(orig.hash).replace(/^stat\./, '') : id;
+            for (const key of ['description', 'text', 'name', 'string', 'value']) {
               if (typeof orig[key] === 'string') {
-                const t = translateMod(orig[key], id);
+                const t = translateMod(orig[key], sid);
                 if (t !== orig[key]) { REVERSE.set(t, orig[key]); orig[key] = t; n++; }
                 break;
               }
             }
-            if (DEBUG) console.warn('[poe2cn] structured mod in', sec, orig);
           }
         }
       }
@@ -303,16 +304,23 @@
         for (const g of json.result) {
           const gl = DICT.itemCategories[g.id]; if (gl) { REVERSE.set(gl, g.label); g.label = gl; }
           for (const e of g.entries || []) {
-            const baseEn = e.type && DICT.items[e.type];
-            if (baseEn) {
-              ITEM_REV.set(baseEn, e.type);   // en -> zh, for the outgoing query
-              REVERSE.set(baseEn, e.type); e.type = baseEn; n++;
-            } else noteMiss(e.type);          // searchable item type not in dict
+            const zhType = e.type, zhName = e.name;
+            const enType = zhType && DICT.items[zhType];
+            if (enType) {
+              ITEM_REV.set(enType, zhType);   // en -> zh, for the outgoing query
+              REVERSE.set(enType, zhType); e.type = enType; n++;
+            } else noteMiss(zhType);          // searchable item type not in dict
             // uniques have a `name` (the unique name) + base `type`
-            if (e.name) {
-              const un = DICT.uniques[e.name];
-              if (un) { ITEM_REV.set(un, e.name); REVERSE.set(un, e.name); e.name = un; n++; }
-            } else if (e.text && baseEn) { REVERSE.set(baseEn, e.text); e.text = baseEn; }
+            const enName = zhName && DICT.uniques[zhName];
+            if (enName) { ITEM_REV.set(enName, zhName); REVERSE.set(enName, zhName); e.name = enName; n++; }
+            // `text` is the combined "name base" the autocomplete matches/displays;
+            // rebuild it from the translated parts (for uniques especially).
+            if (e.text) {
+              const orig = e.text; let txt = orig;
+              if (zhName && enName) txt = txt.split(zhName).join(enName);
+              if (zhType && enType) txt = txt.split(zhType).join(enType);
+              if (txt !== orig) { ITEM_REV.set(txt, orig); REVERSE.set(txt, orig); e.text = txt; n++; }
+            }
           }
         }
       } else if (pathname.endsWith('/data/leagues')) {
