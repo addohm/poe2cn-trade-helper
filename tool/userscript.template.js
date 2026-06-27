@@ -84,23 +84,39 @@
     // (leaving __POESESSION etc.) so the app refetches once and our hook
     // translates + re-caches the English copy.
     try {
-      for (const k of ['trade2stats', 'trade2filters', 'trade2items', 'trade2data']) {
-        localStorage.removeItem('lscache-' + k);
-        localStorage.removeItem('lscache-' + k + '-cacheexpiration');
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('lscache-trade2') === 0) keys.push(k);
       }
+      for (const k of keys) localStorage.removeItem(k);
     } catch (e) { console.warn('[poe2cn] cache clear failed', e); }
   }
 
-  // On a dictionary-version change, bust once so the new translations take effect.
+  // The site usually serves data/* straight from its localStorage cache (the
+  // `lscache` lib) WITHOUT refetching, so our network hook never sees it. Translate
+  // those cached payloads in place at document-start, before the app reads them.
+  // Idempotent: skips entries already in English (no CJK). Also repopulates the
+  // reverse maps from the real cached data (bonus for search-reverse + peek).
+  const CACHE_MAP = {
+    'lscache-trade2stats': '/data/stats', 'lscache-trade2items': '/data/items',
+    'lscache-trade2filters': '/data/filters', 'lscache-trade2data': '/data/static',
+  };
+  function translateCache() {
+    for (const key in CACHE_MAP) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw || !CJK_RE.test(raw)) continue;       // missing or already English
+        const json = JSON.parse(raw);
+        if (json && json.result) {
+          localStorage.setItem(key, JSON.stringify(translate(CACHE_MAP[key], json)));
+          if (DEBUG) console.log('[poe2cn] translated cached', key);
+        }
+      } catch (_) {}
+    }
+  }
   if (SETTINGS.enabled) {
-    try {
-      const VKEY = 'poe2cn-dict-version';
-      if (localStorage.getItem(VKEY) !== DICT_VERSION) {
-        bustCache();
-        localStorage.setItem(VKEY, DICT_VERSION);
-        console.log('[poe2cn] dict', DICT_VERSION, '— cleared trade data cache; will refetch & translate');
-      }
-    } catch (e) { console.warn('[poe2cn] cache-bust failed', e); }
+    try { translateCache(); } catch (e) { console.warn('[poe2cn] translateCache failed', e); }
   }
 
   const FETCH_RE = /\/api\/trade2\/fetch\//;          // search-result listings
