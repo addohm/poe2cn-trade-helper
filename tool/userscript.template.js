@@ -496,7 +496,8 @@
   // Substring replacements (applied within a text node) for composite strings:
   // the league dropdown shows "<game title> - <league>", so we swap both pieces.
   const SUBSTR = Object.assign(
-    { '《流放之路：降临》': 'Path of Exile 2', '流放之路：降临': 'Path of Exile 2' },
+    { '《流放之路：降临》': 'Path of Exile 2', '流放之路：降临': 'Path of Exile 2',
+      '（遗产）': '（Legacy）', '(遗产)': '(Legacy)' },   // legacy-variant unique marker
     DICT.leagues);
 
   // Inline patterns: "等级 N <skill>", gem cost / cast time, etc.
