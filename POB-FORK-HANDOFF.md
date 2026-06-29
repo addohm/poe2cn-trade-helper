@@ -8,6 +8,58 @@
 
 ---
 
+## Setup — where this runs (read first)
+
+This file lives in `poe2cn-trade-helper`, but the **workspace is your PoB fork**:
+
+1. **Fork the PoE2 PoB** on GitHub — the **PoE2** variant, *not* the PoE1
+   `PathOfBuildingCommunity/PathOfBuilding`. Clone **your fork**.
+2. **Copy the datamine toolchain into the fork** so it's self-contained. From
+   `poe2cn-trade-helper/tool/`: `engine.mjs`, `extract_items.mjs`, `extract_statdesc.mjs`,
+   `package.json` → `<fork>/tools/cn-translate/`. Drop **this file** in at the fork root.
+   (`npm install` in that folder pulls `pathofexile-dat`.)
+3. Start a new Claude Code session **with the fork as the working directory**; first
+   instruction: "Read POB-FORK-HANDOFF.md".
+
+**Two-machine reality (same as the userscript project):** the **datamine needs the WeGame
+国服 client + WSL node**, so generate the translation tables on the **Windows machine with
+the client**, then **commit the generated Lua tables into the fork**. PoB itself (and the
+Lua hook dev) runs anywhere — that machine just consumes the committed tables. Character
+import from a 国服 *account* is out of scope (different auth/API on poe.game.qq.com); the
+workable path is **manual item paste**.
+
+---
+
+## Scope — item-paste translation vs "completely Chinese" PoB
+
+Two very different efforts hide under "make PoB Chinese":
+
+- **(A) Translate GAME DATA** (item bases, mods/stat lines, skills, uniques, passive-tree
+  stats, gems). **This is what we have.** The en↔zh tables are **bidirectional** (en + zh per
+  metadata `Id`), so the *same* tables serve **input** (zh→en — item paste) *and* **display**
+  (en→zh — showing game content in Chinese). Gaps: the `Mods` table (affixes), passive-tree
+  node *names*, and composed/templated strings (handle like §4).
+- **(B) Localize PoB's OWN UI** (buttons, menus, panel labels, calc output, tooltips, help).
+  **None are in our datamine** — they're PoB author strings, and PoB has **no i18n framework**
+  (English is hardcoded throughout). A large, *separate* localization project (externalize
+  strings + a zh file + a render hook), best coordinated with the PoB community; every upstream
+  update adds strings to track.
+
+**Recommendation — phase it; lead with the input layer:**
+- **Phase 1 (highest ROI): item-paste translation (zh→en).** Unlocks PoB for 国服 players —
+  import gear; the English UI is learnable/tolerable (many do this today). ~70% of the data
+  exists here already.
+- **Phase 2: game-data DISPLAY in Chinese (en→zh)** via the same bidirectional tables + a
+  render hook for composed strings. Big, but leveraged by existing data.
+- **Phase 3: PoB UI localization (B).** Largest piece, least helped by our data — a distinct
+  sub-project (or a community PoB-i18n effort). A 国服 player is productive after Phase 1, so
+  **don't gate accessibility on Phase 3.**
+
+The phase list in §10 below is the *item-paste* breakdown (Phase 1); Phases 2–3 above are the
+longer roadmap toward "completely Chinese."
+
+---
+
 ## 0. Goal & why it's tractable
 
 PoB can't parse 国服 items because the pasted text is Simplified Chinese and PoB
