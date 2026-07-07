@@ -273,6 +273,14 @@
           }
         }
       }
+      // property / requirement / flag labels (物品稀有度, 复活次数, 已腐化, ...)
+      for (const arr of [it.properties, it.additionalProperties, it.requirements]) {
+        if (!Array.isArray(arr)) continue;
+        for (const p of arr) {
+          const en = p && typeof p.name === 'string' && CHROME[p.name];
+          if (en) { REVERSE.set(en, p.name); p.name = en; n++; }
+        }
+      }
     }
     if (DEBUG) console.log('[poe2cn] translated fetch →', n, 'changes');
     return json;
@@ -481,6 +489,12 @@
     '精魂': 'Spirit', '品质': 'Quality', '护甲': 'Armour', '闪避值': 'Evasion Rating',
     '能量护盾': 'Energy Shield', '格挡': 'Block',
     '充能次数': 'Charges', '装填时间': 'Reload Time',
+    // waystone / map properties + item flags (result cards)
+    '复活次数': 'Revives', '物品稀有度': 'Item Rarity', '怪物群规模': 'Monster Pack Size',
+    '怪物稀有度': 'Monster Rarity', '怪物效能': 'Monster Effectiveness',
+    '引路石掉落几率': 'Waystone Drop Chance', '引路石阶级': 'Waystone Tier',
+    '已腐化': 'Corrupted', '已鉴定': 'Identified', '未鉴定': 'Unidentified',
+    '数量': 'Quantity', '堆叠数量': 'Stack Size', '经验值': 'Experience',
     // gem / skill tooltip labels
     '消耗': 'Cost', '魔力': 'Mana', '生命': 'Life', '施放时间': 'Cast Time',
     '冷却时间': 'Cooldown Time', '攻击时间': 'Attack Time',
