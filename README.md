@@ -7,8 +7,11 @@ strings differ — so this is an **id-based translation** layer, not a rebuild.
 
 A Tampermonkey userscript patches `fetch`/`XHR` on the CN site and rewrites the
 trade API responses to English before the page renders. The dictionary is built
-offline from the CN + intl data endpoints, plus item base names datamined from the
-国服 game client.
+from the live CN + intl trade endpoints (for trade-API stats/filters/currency),
+plus all **client-derived content** (item/unique/gem names, mod-line templates)
+consumed from the sibling **[poe2-en-cn-dict](../poe2-en-cn-dict)** project — the
+single source of truth for CN↔EN game strings. This tool no longer datamines the
+client itself.
 
 What it translates:
 - **Filter UI** — stat filters, item-category/type, all filter-panel sections and
@@ -55,8 +58,9 @@ Settings persist per browser.
 
 ## Use it on other machines (Linux, etc.) via GitHub auto-update
 
-The userscript is OS-independent — only the **datamine** needs the Windows/WeGame
-client. So one machine builds; any machine runs and auto-updates from GitHub raw.
+The userscript is OS-independent — only **building the dictionary** needs the
+Windows/WeGame client (to (re)generate poe2-en-cn-dict). So one machine builds;
+any machine runs and auto-updates from GitHub raw.
 
 **One-time setup on the Windows build machine:**
 1. Create a **public** repo at `https://github.com/addohm/poe2cn-trade-helper`
@@ -91,42 +95,56 @@ copying.
 
 Two authoritative sources, nothing else:
 - the **live trade API** (both `poe.game.qq.com` and `pathofexile.com`) for
-  mods/stats, currency, filters, leagues, item categories;
-- the **国服 WeGame client** for item base names, gem/skill text, and stat lines.
+  trade-stat text, currency, filters, leagues, item categories — joined by
+  language-independent id. The intl host is uniquely authoritative for trade-stat
+  phrasing (pseudo aggregates and compound radius-jewel mods are assembled by the
+  trade backend and have no client stat-description);
+- the **[poe2-en-cn-dict](../poe2-en-cn-dict)** consumer export for all
+  client-derived content (item/unique/gem names, mod-line templates, flat
+  cn↔en lookups). That project datamines the **国服 WeGame client** — the only
+  source whose Simplified-Chinese data matches the 国服 trade site (the global
+  client has no SC data; poe2db is global/Traditional with no API).
 
-The WeGame 国服 client is **required** — its Simplified-Chinese data is the only
-source that matches the 国服 trade site (the global client has no SC data, and
-sites like poe2db are global/Traditional with no API). The datamine **auto-detects**
-the WeGame install and errors clearly if it's missing.
+Building poe2-en-cn-dict **requires** the WeGame 国服 client (Windows-only). This
+tool just consumes its committed export, so no game client is needed to build the
+userscript once the export exists.
 
 ## Rebuild the dictionary (after a game/content update, ~every 4 months)
 
 ### The easy way — one command
 
-From the project's `tool/` folder, run the refresher (it datamines the WeGame
-client, re-fetches the trade endpoints, rebuilds the userscript, and pushes to
-GitHub):
+From the project's `tool/` folder, run the refresher (it regenerates the
+poe2-en-cn-dict consumer export, re-fetches the trade endpoints, rebuilds the
+userscript, and pushes to GitHub):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\Users\addohm\Documents\poe2cn-trade-helper\tool\refresh.ps1
 ```
 
-(or right-click `tool\refresh.ps1` → **Run with PowerShell**). On first run it
-auto-installs the datamine deps (`npm install` in `tool/`). It's self-contained —
-no dependency on any other project.
+(or right-click `tool\refresh.ps1` → **Run with PowerShell**).
+
+**After a game *client* patch**, first rebuild the dictionary itself in the sibling
+repo (this is the only step that reads the WeGame + Steam clients):
+
+```powershell
+wsl python3 /mnt/c/Users/addohm/Documents/poe2-en-cn-dict/update.py   # datamine + full rebuild
+```
+
+Then run `refresh.ps1` here. If the trade *site* changed but the client didn't, you
+can skip that and just run `refresh.ps1` (it re-fetches the live endpoints).
 
 ### The manual steps (what refresh.ps1 does)
 
 ```bash
-# 1. Client datamine — ONLY after a CN *client* update (run under WSL). Self-
-#    contained: `npm install` once in tool/, then:
-cd /mnt/c/Users/addohm/Documents/poe2cn-trade-helper/tool
-node extract_items.mjs --refresh-schema   # bases, classes, gem/skill text, unique names
-node extract_statdesc.mjs                  # full en<->zh StatDescriptions templates
+# 1. Consumer export — reshape poe2-en-cn-dict's committed dictionary/ into the
+#    trade-helper maps (no game client needed; run under WSL).
+wsl python3 /mnt/c/Users/addohm/Documents/poe2-en-cn-dict/export_consumers.py
 
-# 2. Dictionary + userscript — after either the trade site OR the client updates.
+# 2. Dictionary + userscript — fetch the live trade endpoints (both hosts) and
+#    inject the export into the userscript.
 wsl python3 /mnt/c/Users/addohm/Documents/poe2cn-trade-helper/tool/build_dict.py
 #    --offline rebuilds from tool/raw/ cache without re-fetching
+#    --export <dir> overrides the consumer-export path
 ```
 
 After step 2, **read `tool/dist/report.md`** — it shows coverage and a diff vs the
@@ -137,24 +155,24 @@ Then reinstall/refresh the userscript in Tampermonkey.
 
 ```
 tool/
-  refresh.ps1              # one-command: datamine + fetch + rebuild + push (after a patch)
-  build_dict.py            # fetch trade endpoints (both hosts) + merge all data -> dict + userscript
-  engine.mjs               # self-contained .dat reader (pathofexile-dat); WeGame auto-detect
-  extract_items.mjs        # datamine bases/classes + gem/skill text + unique names
-  extract_statdesc.mjs     # datamine full en<->zh StatDescriptions templates (gem/skill stats, mods)
-  package.json             # datamine deps (pathofexile-dat); `npm install` in tool/
+  refresh.ps1              # one-command: export + fetch + rebuild + push (after a patch)
+  build_dict.py            # fetch trade endpoints (both hosts) + inject poe2-en-cn-dict export -> userscript
   userscript.template.js   # userscript logic (__DICT__ injected at build time)
   sim_translate.py         # offline coverage check (data/* vs cached CN responses)
   sim_mods.py              # offline check of result-mod (affix) translation
   sim_dom.py               # offline check of DOM/chrome/tooltip/league translation
-  data/                    # client-datamined inputs (item_bases, item_classes, skill_text, stat_lines, unique_names)
   raw/                     # cached raw API responses (for --offline / diffing)
   dist/
-    dict.json              # full bidirectional en<->zh dictionary
+    dict.json              # build coverage + provenance
     dict.runtime.json      # slim display-only zh/id -> en (embedded in the userscript)
     poe2cn-trade.user.js   # << install this
     report.md              # coverage + diff-vs-previous
+  # DEPRECATED (superseded by poe2-en-cn-dict; kept for history, no longer run):
+  #   engine.mjs, extract_items.mjs, extract_statdesc.mjs, package.json, data/
 ```
+
+Client content comes from **[../poe2-en-cn-dict](../poe2-en-cn-dict)** →
+`dictionary/consumers/trade-helper/` (regenerate with its `export_consumers.py`).
 
 ## Environment notes
 
@@ -162,11 +180,12 @@ tool/
   network stack can't reach `pathofexile.com` (a Windows-side proxy maps it to a
   fake-IP). It also sends browser headers + paces requests so Cloudflare's
   bot-fight doesn't 403 it.
-- The datamine is **self-contained**: `tool/engine.mjs` + `tool/node_modules`
-  (`pathofexile-dat`, installed by `npm install`), run on **WSL node**. It
-  **auto-detects** the WeGame install under `/mnt/<drive>/WeGameApps/rail_apps/...`
-  (override via `tool/data/config.json` `{"cnInstall": "..."}` or a CLI path arg).
-  Unique item names come from the client's `Words.Text2` (en + SC, joined by row).
+- The **client datamine now lives in [poe2-en-cn-dict](../poe2-en-cn-dict)**, which
+  reads the WeGame 国服 client (auto-detected under
+  `/mnt/<drive>/WeGameApps/rail_apps/...`) and the Steam client, and emits a
+  `dictionary/consumers/trade-helper/` bundle this tool consumes. See that repo's
+  README for the datamine details. The old `tool/extract_*.mjs` + `tool/engine.mjs`
+  are retained only for history.
 
 ## Scope / ToS
 

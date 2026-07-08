@@ -1,9 +1,16 @@
 # refresh.ps1 - one-command rebuild after a PoE2 CN content patch.
-# Re-datamines the CN client, re-fetches the live trade endpoints from both
-# sites, and rebuilds dist/dict.json + dist/poe2cn-trade.user.js.
+#
+# Unified pipeline (see UNIFY-DICT-HANDOFF.md): all client-derived content now
+# comes from the sibling dictionary repo  ..\..\poe2-en-cn-dict  (single source of
+# truth). This script (1) regenerates that repo's trade-helper consumer export,
+# (2) fetches the live trade endpoints and rebuilds the userscript, (3) publishes.
 #
 #   Run from anywhere:  powershell -ExecutionPolicy Bypass -File <...>\tool\refresh.ps1
-#   (or right-click -> Run with PowerShell)
+#
+# FULL content refresh after a patch: first rebuild the dictionary itself in
+# poe2-en-cn-dict (its own  python update.py , which reads the WeGame + Steam
+# clients). THEN run this script. If you skip that, the export is regenerated from
+# whatever dictionary/ output is already committed there.
 #
 # After it finishes: review dist\report.md, then reload the userscript in
 # Tampermonkey (or let it auto-update if you've set that up).
@@ -11,26 +18,25 @@
 
 $ErrorActionPreference = 'Stop'
 $tool = $PSScriptRoot
+$proj = Split-Path $tool -Parent
+$dictRepo = Join-Path (Split-Path $proj -Parent) 'poe2-en-cn-dict'
+
+if (-not (Test-Path $dictRepo)) {
+  throw "Dictionary repo not found at $dictRepo (expected sibling of poe2cn-trade-helper)."
+}
+$wslDict = (wsl wslpath -a "$dictRepo").Trim()
 $wslTool = (wsl wslpath -a "$tool").Trim()
 
-# Self-contained datamine: WSL node + this folder's own pathofexile-dat.
-Write-Host '== 0/3  Ensure datamine deps (npm install if needed) ==' -ForegroundColor Cyan
-wsl bash -lc "cd '$wslTool' && [ -d node_modules ] || npm install"
+Write-Host '== 1/2  Regenerate consumer export from poe2-en-cn-dict ==' -ForegroundColor Cyan
+wsl python3 "$wslDict/export_consumers.py"
 
-Write-Host '== 1/3  Datamine items / classes / skills / unique names ==' -ForegroundColor Cyan
-wsl bash -lc "cd '$wslTool' && node extract_items.mjs --refresh-schema"
-
-Write-Host '== 2/3  Datamine StatDescriptions (gem/skill stat lines + mods) ==' -ForegroundColor Cyan
-wsl bash -lc "cd '$wslTool' && node extract_statdesc.mjs"
-
-Write-Host '== 3/3  Fetch live trade endpoints + build dictionary and userscript ==' -ForegroundColor Cyan
+Write-Host '== 2/2  Fetch live trade endpoints + build dictionary and userscript ==' -ForegroundColor Cyan
 wsl python3 "$wslTool/build_dict.py"
 
 # Publish the rebuilt userscript to GitHub so every browser (incl. Linux) can
 # auto-update from the raw URL. Requires an 'origin' remote + cached credentials
 # (one-time setup in README). Skips cleanly if not configured.
 Write-Host '== Publish  Push userscript to GitHub (for auto-update) ==' -ForegroundColor Cyan
-$proj = Split-Path $tool -Parent
 Push-Location $proj
 try {
   $remotes = @(git remote 2>$null)

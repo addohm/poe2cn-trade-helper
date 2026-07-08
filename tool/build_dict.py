@@ -75,29 +75,31 @@ MAX_ATTEMPTS = 3       # per-endpoint retries on block/transient failure
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 RAW_DIR = SCRIPT_DIR / "raw"
-DATA_DIR = SCRIPT_DIR / "data"          # client-datamined inputs (extract_items.mjs)
 DIST_DIR = SCRIPT_DIR / "dist"
 DICT_PATH = DIST_DIR / "dict.json"
 RUNTIME_PATH = DIST_DIR / "dict.runtime.json"       # slim display-only zh/id -> en
 REPORT_PATH = DIST_DIR / "report.md"
 USERSCRIPT_PATH = DIST_DIR / "poe2cn-trade.user.js"
 TEMPLATE_PATH = SCRIPT_DIR / "userscript.template.js"
-ITEM_BASES_PATH = DATA_DIR / "item_bases.json"      # [{id, en, zh}]
-ITEM_CLASSES_PATH = DATA_DIR / "item_classes.json"  # [{id, en, zh}]
-SKILL_TEXT_PATH = DATA_DIR / "skill_text.json"      # [{id, en_name, zh_name, en_desc, zh_desc}]
-STAT_LINES_PATH = DATA_DIR / "stat_lines.json"      # [[zhTemplate, enTemplate], ...]
-UNIQUE_NAMES_PATH = DATA_DIR / "unique_names.json"  # [[zh, en], ...] (Words.Text2)
+# All client-derived content now comes from the standalone poe2-en-cn-dict
+# consumer export (see UNIFY-DICT-HANDOFF.md), NOT a local datamine. Regenerate
+# it there with `python export_consumers.py`. Only the trade-API structural maps
+# (stats/static/items/filters/leagues) still come from the live id-join below —
+# intl `data/stats` is the sole authoritative source for trade-stat phrasing
+# (pseudo aggregates + compound radius-jewel mods have no client stat-desc).
+EXPORT_DIR = (SCRIPT_DIR.parent.parent
+              / "poe2-en-cn-dict" / "dictionary" / "consumers" / "trade-helper")
 
-# PoE rich-text markup: "[Key|Display]" renders as "Display"; "[Display]" as "Display".
-_TAG_PIPE = re.compile(r"\[([^\]|]+)\|([^\]]+)\]")
-_TAG_PLAIN = re.compile(r"\[([^\]]+)\]")
 
-
-def strip_tags(s: str | None) -> str:
-    if not s:
-        return ""
-    return _TAG_PLAIN.sub(r"\1", _TAG_PIPE.sub(r"\2", s))
-
+def load_export_json(name: str):
+    """Load one file from the poe2-en-cn-dict trade-helper consumer export."""
+    p = EXPORT_DIR / name
+    if not p.exists():
+        raise FileNotFoundError(
+            f"consumer export missing: {p}\n"
+            f"Build it first in poe2-en-cn-dict:  python export_consumers.py"
+        )
+    return json.loads(p.read_bytes().decode("utf-8"))
 
 # --- fetching / caching -----------------------------------------------------
 
@@ -271,39 +273,20 @@ def join_item_categories(intl: dict, cn: dict) -> tuple[dict, dict, set]:
     return categories, coverage, cn_types
 
 
-def load_client_list(path: Path) -> list[dict] | None:
-    """Load a client-datamined [{id, en, zh}] list (from extract_items.mjs)."""
-    if not path.exists():
-        return None
-    return json.loads(path.read_bytes().decode("utf-8"))
-
-
 def build_item_bases(cn_types: set[str]) -> tuple[dict, dict]:
-    """Build the en<->zh item-base section from the client extract, and
-    coverage-check it against the CN trade endpoint's `type` strings."""
-    bases = load_client_list(ITEM_BASES_PATH)
-    classes = load_client_list(ITEM_CLASSES_PATH)
-    if bases is None:
-        return {"bases": [], "classes": classes or [], "source": "missing"}, {
-            "available": False,
-        }
-
-    # zh display name -> en. (Multiple ids can share a display name; keep first.)
-    zh_to_en: dict[str, str] = {}
-    for b in bases:
-        zh, en = b.get("zh"), b.get("en")
-        if zh and en:
-            zh_to_en.setdefault(zh, en)
+    """Build the en<->zh item-base section from the poe2-en-cn-dict export, and
+    coverage-check it against the CN trade endpoint's `type` strings. The export
+    ships {zh: en} maps (BaseItemTypes / ItemClasses)."""
+    zh_to_en: dict[str, str] = load_export_json("items.json") or {}
+    classes_map: dict[str, str] = load_export_json("item_classes.json") or {}
 
     covered = sum(1 for t in cn_types if t in zh_to_en)
     uncovered = sorted(t for t in cn_types if t not in zh_to_en)
 
     section = {
-        "bases": [{"en": b["en"], "zh": b["zh"]} for b in bases
-                  if b.get("en") and b.get("zh")],
-        "classes": [{"en": c["en"], "zh": c["zh"]} for c in (classes or [])
-                    if c.get("en") and c.get("zh")],
-        "source": "client-datamined (metadata Id join)",
+        "bases": [{"en": en, "zh": zh} for zh, en in zh_to_en.items()],
+        "classes": [{"en": en, "zh": zh} for zh, en in classes_map.items()],
+        "source": "poe2-en-cn-dict export (BaseItemTypes/ItemClasses)",
     }
     coverage = {
         "available": True,
@@ -477,13 +460,13 @@ def write_report(cov: dict, dict_obj: dict, prev: dict | None) -> str:
         L.append(f"- cn-only categories: {_trunc(it['cn_only_categories'])}")
     L.append("")
 
-    # item bases (client-datamined, id-join)
+    # item bases (poe2-en-cn-dict export, id-join)
     ib = cov["item_bases"]
-    L.append("## item bases  (client-datamined, metadata-Id join — robust)")
+    L.append("## item bases  (poe2-en-cn-dict export, metadata-Id join — robust)")
     if not ib["available"]:
-        L.append("- ⚠️ `tool/data/item_bases.json` MISSING — run `extract_items.mjs` "
-                 "with the sibling node to datamine the CN client. Items left empty.")
-        warnings.append("item bases: item_bases.json missing — run extract_items.mjs.")
+        L.append("- ⚠️ consumer export MISSING — run `python export_consumers.py` "
+                 "in poe2-en-cn-dict. Items left empty.")
+        warnings.append("item bases: export missing — run export_consumers.py.")
     else:
         pct = (100 * ib["cn_trade_types_covered"] / ib["cn_trade_types"]
                if ib["cn_trade_types"] else 0)
@@ -602,12 +585,11 @@ def build_runtime_dict(dict_obj: dict) -> dict:
         "filterOptionsByZh": filters["options_by_zh"],
         **_skill_runtime_maps(),
         # full stat-description templates (gem/skill stats + mods); the userscript
-        # builds a normalized lookup Map from these at startup.
-        "statLines": load_client_list(STAT_LINES_PATH) or [],
+        # builds a normalized lookup Map from these at startup. [[zh, en], ...]
+        "statLines": load_export_json("stat_lines.json") or [],
         # localized unique item names (Words.Text2) zh -> en, for the find-items
         # list + outgoing-query reverse-mapping.
-        "uniques": {zh: en for zh, en in (load_client_list(UNIQUE_NAMES_PATH) or [])
-                    if zh and en},
+        "uniques": load_export_json("uniques.json") or {},
         # en -> zh for the display sections (filters/static/categories/leagues/
         # stat groups) so the userscript can seed its reverse maps at startup and
         # peek/search-reverse work even when the site serves data/* from its cache.
@@ -638,18 +620,13 @@ def _rev_seed(dict_obj: dict) -> dict:
 
 
 def _skill_runtime_maps() -> dict:
-    """zh->en maps for gem/skill names and (markup-stripped) descriptions."""
-    skills = load_client_list(SKILL_TEXT_PATH) or []
-    names: dict[str, str] = {}
-    descs: dict[str, str] = {}
-    for r in skills:
-        zn, en = r.get("zh_name"), r.get("en_name")
-        if zn and en and zn != en:
-            names.setdefault(zn, en)
-        zd, ed = strip_tags(r.get("zh_desc")), strip_tags(r.get("en_desc"))
-        if zd and ed and zd != ed:
-            descs.setdefault(zd, ed)
-    return {"skillNames": names, "skillDesc": descs}
+    """zh->en maps for gem/skill names and (already markup-stripped) descriptions,
+    straight from the poe2-en-cn-dict export ({names:{zh:en}, desc:{zh:en}})."""
+    skills = load_export_json("skills.json") or {}
+    return {
+        "skillNames": skills.get("names", {}),
+        "skillDesc": skills.get("desc", {}),
+    }
 
 
 def emit_userscript(runtime: dict, version: str, meta: dict) -> bool:
