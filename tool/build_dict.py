@@ -101,6 +101,14 @@ def load_export_json(name: str):
         )
     return json.loads(p.read_bytes().decode("utf-8"))
 
+
+def load_export_json_opt(name: str):
+    """Optional export file (may not exist yet in the dictionary export)."""
+    p = EXPORT_DIR / name
+    if not p.exists():
+        return None
+    return json.loads(p.read_bytes().decode("utf-8"))
+
 # --- fetching / caching -----------------------------------------------------
 
 def raw_path(side: str, endpoint: str) -> Path:
@@ -590,6 +598,12 @@ def build_runtime_dict(dict_obj: dict) -> dict:
         # localized unique item names (Words.Text2) zh -> en, for the find-items
         # list + outgoing-query reverse-mapping.
         "uniques": load_export_json("uniques.json") or {},
+        # optional layers (pending the export expansion — see
+        # poe2-en-cn-dict/CONSUMER-EXPORT-EXPANSION.md): magic/rare affix words,
+        # gem tags, and trade-UI chrome terms. Empty until the export ships them.
+        "affixes": load_export_json_opt("affixes.json") or {},
+        "gemTags": load_export_json_opt("gem_tags.json") or {},
+        "uiTerms": load_export_json_opt("ui_terms.json") or {},
         # en -> zh for the display sections (filters/static/categories/leagues/
         # stat groups) so the userscript can seed its reverse maps at startup and
         # peek/search-reverse work even when the site serves data/* from its cache.

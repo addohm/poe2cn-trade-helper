@@ -240,9 +240,21 @@
         if (!orig) continue;
         if (DICT.items[orig]) {                       // whole field is a base
           REVERSE.set(DICT.items[orig], orig); it[f] = DICT.items[orig]; n++;
+        } else if (DICT.uniques[orig]) {              // whole field is a unique/item name
+          REVERSE.set(DICT.uniques[orig], orig); it[f] = DICT.uniques[orig]; n++;
         } else if (zhBase && orig.indexOf(zhBase) >= 0) {  // base embedded in a magic name
           const t = orig.split(zhBase).join(enBase);
           REVERSE.set(t, orig); it[f] = t; n++;
+        }
+      }
+      // magic/rare names: translate the remaining affix (prefix/suffix) words
+      // around the (now-English) base, token by token, from the dictionary export.
+      if (DICT.affixes) {
+        for (const f of ['typeLine', 'name']) {
+          const orig = it[f];
+          if (typeof orig !== 'string' || !CJK_RE.test(orig)) continue;
+          const t = orig.replace(/\S+/g, (tok) => DICT.affixes[tok] || tok);
+          if (t !== orig) { REVERSE.set(t, orig); it[f] = t; n++; }
         }
       }
       if (it.baseType && CJK_RE.test(it.baseType)) noteMiss(it.baseType);  // base not in dict
@@ -530,6 +542,13 @@
     [/^(?:上架\s*)?(\d+)\s*天前$/, (m) => (/上架/.test(m[0]) ? 'Listed ' : '') + m[1] + 'd ago'],
     [/^(?:上架\s*)?(\d+)\s*小时前$/, (m) => (/上架/.test(m[0]) ? 'Listed ' : '') + m[1] + 'h ago'],
     [/^(?:上架\s*)?(\d+)\s*分钟前$/, (m) => (/上架/.test(m[0]) ? 'Listed ' : '') + m[1] + 'm ago'],
+    [/^(?:上架\s*)?(\d+)\s*周前$/, (m) => (/上架/.test(m[0]) ? 'Listed ' : '') + m[1] + 'w ago'],
+    [/^(?:上架\s*)?(\d+)\s*(?:个)?月前$/, (m) => (/上架/.test(m[0]) ? 'Listed ' : '') + m[1] + 'mo ago'],
+    // results-count header: "正在展示100个结果 (10000+个匹配项)"
+    [/^正在展示\s*(\d+)\s*个结果\s*[（(]\s*([\d,]+\+?)\s*个匹配项\s*[)）]\s*$/,
+      (m) => 'Showing ' + m[1] + ' results (' + m[2] + ' matches)'],
+    // mod value-range display: "[2—3 到 6—8]" (到 = "to")
+    [/^\[([\d.\-—]+)\s*到\s*([\d.\-—]+)\]$/, (m) => '[' + m[1] + ' to ' + m[2] + ']'],
   ];
 
   const CJK = /[一-鿿]/;
@@ -542,10 +561,20 @@
     if (!k || !CJK.test(k)) return;          // skip empty / already-English nodes
     const set = (en) => { REVERSE.set(en, k); node.nodeValue = v.replace(k, en); };
 
-    // 1) fixed chrome (colon-aware: "需求：" -> "Requires：")
-    if (CHROME[k]) return set(CHROME[k]);
+    // 1) fixed chrome + dict-sourced UI terms / gem tags (colon-aware).
+    // CHROME is the legacy hand-map; DICT.uiTerms/gemTags come from the dictionary
+    // export and are the preferred source (CHROME retires once uiTerms covers it).
+    const term = (x) => CHROME[x] || (DICT.uiTerms && DICT.uiTerms[x]) || (DICT.gemTags && DICT.gemTags[x]);
+    if (term(k)) return set(term(k));
     const cm = k.match(/^([\s\S]*?)\s*([：:])$/);
-    if (cm && CHROME[cm[1]]) return set(CHROME[cm[1]] + cm[2]);
+    if (cm && term(cm[1])) return set(term(cm[1]) + cm[2]);
+
+    // 1b) affix (prefix/suffix) display words, incl. "<word> (≥N)" tier annotations
+    if (DICT.affixes) {
+      if (DICT.affixes[k]) return set(DICT.affixes[k]);
+      const am = k.match(/^(\S+?)\s*(\([^)]*\))$/);
+      if (am && DICT.affixes[am[1]]) return set(DICT.affixes[am[1]] + ' ' + am[2]);
+    }
 
     // 2) inline patterns (granted skill, gem cost/cast time)
     for (const [re, fn] of PATTERNS) {
