@@ -285,11 +285,13 @@
           }
         }
       }
-      // property / requirement / flag labels (物品稀有度, 复活次数, 已腐化, ...)
+      // property / requirement / flag labels (符文结界, 结界, 物品稀有度, 已腐化, ...)
+      // from the legacy CHROME map or the dictionary export's uiTerms (preferred).
       for (const arr of [it.properties, it.additionalProperties, it.requirements]) {
         if (!Array.isArray(arr)) continue;
         for (const p of arr) {
-          const en = p && typeof p.name === 'string' && CHROME[p.name];
+          if (!p || typeof p.name !== 'string') continue;
+          const en = CHROME[p.name] || (DICT.uiTerms && DICT.uiTerms[p.name]);
           if (en) { REVERSE.set(en, p.name); p.name = en; n++; }
         }
       }
